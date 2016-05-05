@@ -22,7 +22,7 @@ mkdir "$backup_directory"
 find . ! -name "$backup_directory" ! -name "." -exec cp -t "$backup_directory/" {} +
 
 n=1
-file_count=$(expr $(ls -l | grep -v "\.avi$" | grep -v "$backup_directory$" | wc -l) - 1)
+file_count=$(expr $(ls -l | grep -v "\.avi$" | grep -v "\.mp4$" | grep -v "$backup_directory$" | wc -l) - 1)
 
 for file in *; do
 
@@ -32,7 +32,7 @@ for file in *; do
 	ext="${file_name##*.}"
 	ext_lower_case="${ext,,}"
 
-	if [ "$ext_lower_case" = "avi" ]; then continue; fi
+	if [ "$ext_lower_case" = "avi" ] || [ "$ext_lower_case" = "mp4" ]; then continue; fi
 	if [ "$ext_lower_case" = "jpeg" ]; then ext_lower_case="jpg"; fi
 
 	new_file_name="$(printf "%03d" $n).$ext_lower_case"
