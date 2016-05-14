@@ -46,7 +46,7 @@ for file in *; do
 	# Choosing 1920x1080 would reduce 4:3 images to height 1080 but width would be a lot smaller than 1920
 	# Also vertical images would be much smaller.
 	# Therefore we use -resize 1920x1920
-	convert -quality 80 -resize 1920x1920 "$file" "$new_file_name"
+	convert -quality 80 -resize 1920x1920\> "$file" "$new_file_name"
 
 	rm "$file"
 
