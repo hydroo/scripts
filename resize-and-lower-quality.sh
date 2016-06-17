@@ -22,7 +22,7 @@ mkdir "$backup_directory"
 find . ! -name "$backup_directory" ! -name "." -exec cp -t "$backup_directory/" {} +
 
 n=1
-file_count=$(expr $(ls -l | grep -v "\.avi$" | grep -v "\.mp4$" | grep -v "$backup_directory$" | wc -l) - 1)
+file_count=$(expr $(ls -l | grep -v "\.avi$" | grep -v "\.mp4$" | grep -v "\.mov$" | grep -v "$backup_directory$" | wc -l) - 1)
 
 for file in *; do
 
