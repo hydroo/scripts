@@ -1,0 +1,116 @@
+#! /usr/bin/env bash
+
+set -e
+
+if [ $# -lt 1 ]; then
+	echo "work-in-ramdisk init <size> [workingdir]"
+	echo "  or"
+	echo "work-in-ramdisk exit [ramdiskdir]"
+	echo ""
+	echo "  Size is the number of GiB to use for the ramdisk."
+	echo "  Default workingdir and ramdiskdir is the current directory."
+	exit 0
+fi
+
+command=$1
+
+if [ "$command" != "init" ] && [ "$command" != "exit" ]; then
+	echo "Unknown command \"$command\". Aborting." >&2
+	exit 1
+fi
+
+working_directory=$(pwd)
+ramdisk_directory=$(pwd)
+
+config_file=".work-in-ramdisk.config"
+
+if [ "$command" = "init" ]; then
+
+	if [ $# -lt 2 ]; then
+		echo "Not enough arguments. Aborting." >&2
+		exit 1
+	fi
+
+	size=$2
+	non_numbers=$(echo "$size" | grep "[^0-9]" || true) # without || true set -e would cause the program to exit here
+
+	if [ -n "$non_numbers" ]; then
+		echo "Size ($size) is not an integer. Aborting." >&2
+		exit 1
+	fi
+
+	if [ $# -ge 3 ]; then
+		working_directory=$(cd $3 && pwd)
+	fi
+
+elif [ "$command" = "exit" ]; then
+
+	if [ $# -ge 2 ]; then
+		ramdisk_directory=$(cd $2 && pwd)
+	fi
+
+	if [ ! -e $ramdisk_directory/$config_file ]; then
+		echo "Cannot find config file in $ramdisk_directory. Aborting." >&2
+		exit 1
+	fi
+
+	working_directory=$(cat $ramdisk_directory/$config_file)
+
+fi
+
+if [ "$command" = "init" ]; then
+	size_max=$(expr $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024)
+	size_warn=$(expr $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 / 2)
+
+	if [ $size -gt $size_max ]; then
+		echo "Size ($size) is larger than total RAM ($size_max). Aborting." >&2
+		exit 1
+	fi
+
+	if [ $size -gt $size_warn ]; then
+		echo "Warning: Size ($size) is larger than half the total RAM ($size_max)." >&2
+	fi
+
+	mount_dir=$(sudo mktemp -d -t tmpfs-XXXXXX -p /mnt/)
+	sudo mkdir -p $mount_dir
+	sudo sudo mount -t tmpfs -o size=${size}g tmpfs $mount_dir
+
+	rsync -rlh . $mount_dir
+
+	echo "$working_directory" > $mount_dir/$config_file
+
+	echo "Ramdisk has been successfully setup in $mount_dir ."
+	echo "You can end your session and resync your changes via work-in-ramdisk exit $mount_dir ."
+
+elif [ "$command" = "exit" ]; then
+
+	rsync -rlh $ramdisk_directory/ $working_directory --delete
+
+	echo "Successfully synced $ramdisk_directory to $working_directory"
+
+	cd $working_directory
+
+	lsof_1=$(lsof -t $ramdisk_directory || true) # avoid false positives from lsof itself
+	lsof_2=$(lsof -t $ramdisk_directory || true)
+
+	process_list=""
+	for p1 in $lsof_1; do
+		for p2 in $lsof_2; do
+			if [ "$p1" = "$p2" ]; then
+				process_list="$p1, $process_list"
+			fi
+		done
+	done
+	process_list=${process_list%, }
+
+	if [ -n "$process_list" ]; then
+		echo "Some processes ($process_list) are still using $ramdisk_directory . Cannot delete and unmount it."
+		echo "Do it yourself later via:"
+		echo "  sudo umount $ramdisk_directory"
+		echo "  sudo rm -rf $ramdisk_directory"
+	else
+		sudo umount $ramdisk_directory
+		sudo rm -rf $ramdisk_directory
+	fi
+
+fi
