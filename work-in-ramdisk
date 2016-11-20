@@ -14,8 +14,8 @@ fi
 
 command=$1
 
-if [ "$command" != "init" ] && [ "$command" != "exit" ]; then
-	echo "Unknown command \"$command\". Aborting." >&2
+if [ "$command" != "init" ] && [ "$command" != "sync" ] && [ "$command" != "exit" ]; then
+	echo "Error: Unknown command \"$command\". Should be either init or exit. Aborting." >&2
 	exit 1
 fi
 
@@ -39,7 +39,7 @@ if [ "$command" = "init" ]; then
 		exit 1
 	fi
 
-	size_mb=$(expr $size \* 1024) # use MiB internally because we have to user integers
+	size_mb=$(expr $size \* 1024) # use MiB internally because we have to user integers (rounding troubles)
 
 	if [ $# -ge 3 ]; then
 		working_directory=$(cd $3 && pwd)
@@ -48,7 +48,7 @@ if [ "$command" = "init" ]; then
 	working_directory_size=$(du -d0 -BM $working_directory | sed s/[^0-9]//g)
 
 	if [ $working_directory_size -gt $size_mb ]; then
-		echo "Error: Working dir is larger ($working_directory_size MiB) than what you want to allocate ($size GiB). Aborting." >&2
+		echo "Error: Working directory is larger ($working_directory_size MiB) than your specified RAM disk size ($size GiB). Aborting." >&2
 		exit 1
 	fi
 
@@ -56,12 +56,12 @@ if [ "$command" = "init" ]; then
 	size_warn=$(expr $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 2)
 
 	if [ $size_mb -gt $size_max ]; then
-		echo "Size ($size GiB) is larger than total RAM ($size_max MiB). Aborting." >&2
+		echo "Error: Requested RAM disk size ($size GiB) is larger than your total RAM ($size_max MiB). Aborting." >&2
 		exit 1
 	fi
 
 	if [ $size_mb -gt $size_warn ]; then
-		echo "Warning: Size ($size GiB) is larger than half the total RAM ($size_max MiB)." >&2
+		echo "Warning: Requested RAM disk size ($size GiB) is larger than half your total RAM ($size_max MiB)." >&2
 	fi
 
 elif [ "$command" = "exit" ]; then
@@ -71,7 +71,7 @@ elif [ "$command" = "exit" ]; then
 	fi
 
 	if [ ! -e $ramdisk_directory/$config_file ]; then
-		echo "Cannot find config file in $ramdisk_directory. Aborting." >&2
+		echo "Error: Cannot find internal config file ($config_file) in $ramdisk_directory . Aborting." >&2
 		exit 1
 	fi
 
@@ -89,7 +89,7 @@ if [ "$command" = "init" ]; then
 
 	echo "$working_directory" > $mount_dir/$config_file
 
-	echo "Ramdisk has been successfully setup in $mount_dir ."
+	echo "RAM disk has been successfully setup in $mount_dir ."
 	echo "You can end your session and resync your changes via work-in-ramdisk exit $mount_dir ."
 
 elif [ "$command" = "exit" ]; then
