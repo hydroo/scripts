@@ -5,9 +5,11 @@ set -e
 if [ $# -lt 1 ]; then
 	echo "work-in-ramdisk init <size> [workingdir]"
 	echo "  or"
+	echo "work-in-ramdisk sync [ramdiskdir]"
+	echo "  or"
 	echo "work-in-ramdisk exit [ramdiskdir]"
 	echo ""
-	echo "  Size is the number of GiB to use for the ramdisk."
+	echo "  Size is the number of GiB to use for the RAM disk."
 	echo "  Default workingdir and ramdiskdir is the current directory."
 	exit 0
 fi
@@ -15,7 +17,7 @@ fi
 command=$1
 
 if [ "$command" != "init" ] && [ "$command" != "sync" ] && [ "$command" != "exit" ]; then
-	echo "Error: Unknown command \"$command\". Should be either init or exit. Aborting." >&2
+	echo "Error: Unknown command \"$command\". Has to be init, sync or exit. Aborting." >&2
 	exit 1
 fi
 
@@ -64,7 +66,7 @@ if [ "$command" = "init" ]; then
 		echo "Warning: Requested RAM disk size ($size GiB) is larger than half your total RAM ($size_max MiB)." >&2
 	fi
 
-elif [ "$command" = "exit" ]; then
+elif [ "$command" = "sync" ] || [ "$command" = "exit" ]; then
 
 	if [ $# -ge 2 ]; then
 		ramdisk_directory=$(cd $2 && pwd)
@@ -90,13 +92,19 @@ if [ "$command" = "init" ]; then
 	echo "$working_directory" > $mount_dir/$config_file
 
 	echo "RAM disk has been successfully setup in $mount_dir ."
-	echo "You can end your session and resync your changes via work-in-ramdisk exit $mount_dir ."
+	echo "You can end your session and resync your changes via work-in-ramdisk exit $mount_dir"
+	echo "or just resync via work-in-ramdisk sync $mount_dir ."
 
-elif [ "$command" = "exit" ]; then
+else # sync or exit
 
 	rsync -rlh $ramdisk_directory/ $working_directory --delete
 
 	echo "Successfully synced $ramdisk_directory to $working_directory"
+
+	# only continue if its not just 'sync'
+	if [ "$command" != "exit" ]; then
+		exit 0
+	fi
 
 	cd $working_directory
 
