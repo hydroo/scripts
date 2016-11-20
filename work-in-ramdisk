@@ -39,8 +39,29 @@ if [ "$command" = "init" ]; then
 		exit 1
 	fi
 
+	size_mb=$(expr $size \* 1024) # use MiB internally because we have to user integers
+
 	if [ $# -ge 3 ]; then
 		working_directory=$(cd $3 && pwd)
+	fi
+
+	working_directory_size=$(du -d0 -BM $working_directory | sed s/[^0-9]//g)
+
+	if [ $working_directory_size -gt $size_mb ]; then
+		echo "Error: Working dir is larger ($working_directory_size MiB) than what you want to allocate ($size GiB). Aborting." >&2
+		exit 1
+	fi
+
+	size_max=$(expr $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 )
+	size_warn=$(expr $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 2)
+
+	if [ $size_mb -gt $size_max ]; then
+		echo "Size ($size GiB) is larger than total RAM ($size_max MiB). Aborting." >&2
+		exit 1
+	fi
+
+	if [ $size_mb -gt $size_warn ]; then
+		echo "Warning: Size ($size GiB) is larger than half the total RAM ($size_max MiB)." >&2
 	fi
 
 elif [ "$command" = "exit" ]; then
@@ -59,17 +80,6 @@ elif [ "$command" = "exit" ]; then
 fi
 
 if [ "$command" = "init" ]; then
-	size_max=$(expr $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024)
-	size_warn=$(expr $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 / 2)
-
-	if [ $size -gt $size_max ]; then
-		echo "Size ($size) is larger than total RAM ($size_max). Aborting." >&2
-		exit 1
-	fi
-
-	if [ $size -gt $size_warn ]; then
-		echo "Warning: Size ($size) is larger than half the total RAM ($size_max)." >&2
-	fi
 
 	mount_dir=$(sudo mktemp -d -t tmpfs-XXXXXX -p /mnt/)
 	sudo mkdir -p $mount_dir
