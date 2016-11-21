@@ -145,8 +145,8 @@ else # sync or exit
 	if [ -n "$process_list" ]; then
 		echo "Some processes ($process_list) are still using $ramdisk_dir . Cannot delete and unmount it."
 		echo "Do it yourself later via:"
-		echo "  sudo umount $ramdisk_dir"
-		echo "  sudo rm -rf $ramdisk_dir"
+		echo "  $ sudo umount $ramdisk_dir"
+		echo "  $ sudo rm -rf $ramdisk_dir"
 	else
 		sudo umount $ramdisk_dir
 		sudo rm -rf $ramdisk_dir
