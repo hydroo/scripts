@@ -21,15 +21,17 @@ if [ "$command" != "init" ] && [ "$command" != "sync" ] && [ "$command" != "exit
 	exit 1
 fi
 
-working_directory=$(pwd)
-ramdisk_directory=$(pwd)
+working_dir=$(pwd)
+ramdisk_sub_dir=$(pwd) # a subdir is used because we dont want to handle the mount dir itself. Because the rsync throws errors because of permissions
+ramdisk_dir=           # directory where the RAM disk is mounted
+tmp_dir=               # place where we move the original working directory to, so we can symlink the workingdir into the ramdisk. E.g. now vimsession find the correct files for editing
 
 config_file=".work-in-ramdisk.config"
 
 if [ "$command" = "init" ]; then
 
 	if [ $# -lt 2 ]; then
-		echo "Not enough arguments. Aborting." >&2
+		echo "Error: Not enough arguments. Aborting." >&2
 		exit 1
 	fi
 
@@ -44,13 +46,13 @@ if [ "$command" = "init" ]; then
 	size_mb=$(expr $size \* 1024) # use MiB internally because we have to user integers (rounding troubles)
 
 	if [ $# -ge 3 ]; then
-		working_directory=$(cd $3 && pwd)
+		working_dir=$(cd $3 && pwd)
 	fi
 
-	working_directory_size=$(du -d0 -BM $working_directory | sed s/[^0-9]//g)
+	working_dir_size=$(du -d0 -BM $working_dir | sed s/[^0-9]//g)
 
-	if [ $working_directory_size -gt $size_mb ]; then
-		echo "Error: Working directory is larger ($working_directory_size MiB) than your specified RAM disk size ($size GiB). Aborting." >&2
+	if [ $working_dir_size -gt $size_mb ]; then
+		echo "Error: Working directory is larger ($working_dir_size MiB) than your specified RAM disk size ($size GiB). Aborting." >&2
 		exit 1
 	fi
 
@@ -69,47 +71,66 @@ if [ "$command" = "init" ]; then
 elif [ "$command" = "sync" ] || [ "$command" = "exit" ]; then
 
 	if [ $# -ge 2 ]; then
-		ramdisk_directory=$(cd $2 && pwd)
+		ramdisk_sub_dir=$(cd $2 && pwd)
 	fi
 
-	if [ ! -e $ramdisk_directory/$config_file ]; then
-		echo "Error: Cannot find internal config file ($config_file) in $ramdisk_directory . Aborting." >&2
+	if [ ! -e $ramdisk_sub_dir/$config_file ]; then
+		echo "Error: Cannot find internal config file ($config_file) in $ramdisk_sub_dir . Aborting." >&2
 		exit 1
 	fi
 
-	working_directory=$(cat $ramdisk_directory/$config_file)
+	working_dir=$(head -n 1 $ramdisk_sub_dir/$config_file)
+	tmp_dir=$(tail -n 1 $ramdisk_sub_dir/$config_file)
+	ramdisk_dir=$(dirname $ramdisk_sub_dir)
 
 fi
 
 if [ "$command" = "init" ]; then
 
-	mount_dir=$(sudo mktemp -d -t tmpfs-XXXXXX -p /mnt/)
-	sudo mkdir -p $mount_dir
-	sudo sudo mount -t tmpfs -o size=${size}g tmpfs $mount_dir
+	ramdisk_dir=$(sudo mktemp -d -t tmpfs-XXXXXX -p /mnt/)
+	sudo mkdir -p $ramdisk_dir
+	sudo mount -t tmpfs -o size=${size}g tmpfs $ramdisk_dir
 
-	rsync -rlh . $mount_dir
+	ramdisk_sub_dir=$ramdisk_dir/a #avoid the problem that you cannot change the timestamp on the mount folder
+	mkdir -p $ramdisk_sub_dir
 
-	echo "$working_directory" > $mount_dir/$config_file
+	rsync -rlht . $ramdisk_sub_dir
 
-	echo "RAM disk has been successfully setup in $mount_dir ."
-	echo "You can end your session and resync your changes via work-in-ramdisk exit $mount_dir"
-	echo "or just resync via work-in-ramdisk sync $mount_dir ."
+	above_working_dir=$(dirname $working_dir)
+	working_dir_name=$(basename $working_dir)
+
+	tmp_dir=$(mktemp -d -t -u $working_dir_name-XXXXXX -p $above_working_dir)
+
+	mv $working_dir $tmp_dir
+	ln -s $ramdisk_sub_dir $working_dir
+
+	echo "$working_dir"  > $ramdisk_sub_dir/$config_file
+	echo "$tmp_dir"     >> $ramdisk_sub_dir/$config_file
+
+	echo "RAM disk has been successfully set up in $ramdisk_sub_dir ."
+	echo ""
+	echo "End your session and resync changes via"
+	echo "  \$ work-in-ramdisk exit $ramdisk_sub_dir"
+	echo "or just resync via"
+	echo "  \$ work-in-ramdisk sync $ramdisk_sub_dir ."
 
 else # sync or exit
 
-	rsync -rlh $ramdisk_directory/ $working_directory --delete
+	rsync -rlht $ramdisk_sub_dir/ $tmp_dir --delete
 
-	echo "Successfully synced $ramdisk_directory to $working_directory"
+	echo "Successfully synced $ramdisk_sub_dir to $tmp_dir"
 
-	# only continue if its not just 'sync'
-	if [ "$command" != "exit" ]; then
+	if [ "$command" != "exit" ]; then # stop if we only wanted to sync
 		exit 0
 	fi
 
-	cd $working_directory
+	rm $working_dir
+	mv $tmp_dir $working_dir
 
-	lsof_1=$(lsof -t $ramdisk_directory || true) # avoid false positives from lsof itself
-	lsof_2=$(lsof -t $ramdisk_directory || true)
+	cd $working_dir
+
+	lsof_1=$(lsof -t $ramdisk_dir || true) # avoid false positives from lsof itself
+	lsof_2=$(lsof -t $ramdisk_dir || true)
 
 	process_list=""
 	for p1 in $lsof_1; do
@@ -122,13 +143,15 @@ else # sync or exit
 	process_list=${process_list%, }
 
 	if [ -n "$process_list" ]; then
-		echo "Some processes ($process_list) are still using $ramdisk_directory . Cannot delete and unmount it."
+		echo "Some processes ($process_list) are still using $ramdisk_dir . Cannot delete and unmount it."
 		echo "Do it yourself later via:"
-		echo "  sudo umount $ramdisk_directory"
-		echo "  sudo rm -rf $ramdisk_directory"
+		echo "  sudo umount $ramdisk_dir"
+		echo "  sudo rm -rf $ramdisk_dir"
 	else
-		sudo umount $ramdisk_directory
-		sudo rm -rf $ramdisk_directory
+		sudo umount $ramdisk_dir
+		sudo rm -rf $ramdisk_dir
+
+		echo "Successfully ended session"
 	fi
 
 fi
