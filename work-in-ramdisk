@@ -91,15 +91,15 @@ if [ "$command" = "init" ]; then
 	sudo mkdir -p $ramdisk_dir
 	sudo mount -t tmpfs -o size=${size}g tmpfs $ramdisk_dir
 
-	ramdisk_sub_dir=$ramdisk_dir/a #avoid the problem that you cannot change the timestamp on the mount folder
-	mkdir -p $ramdisk_sub_dir
-
-	rsync -rlht . $ramdisk_sub_dir
-
 	above_working_dir=$(dirname $working_dir)
 	working_dir_name=$(basename $working_dir)
 
 	tmp_dir=$(mktemp -d -t -u $working_dir_name-XXXXXX -p $above_working_dir)
+
+	ramdisk_sub_dir=$ramdisk_dir/$working_dir_name #avoid the problem that you cannot change the timestamp on the mount folder
+	mkdir -p $ramdisk_sub_dir
+
+	rsync -rlht . $ramdisk_sub_dir
 
 	mv $working_dir $tmp_dir
 	ln -s $ramdisk_sub_dir $working_dir
